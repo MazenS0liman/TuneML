@@ -39,8 +39,9 @@ yarn-debug.log*
 yarn-error.log*
 
 # Directories for data
-data/
-models/
+datasets/
+weights/
+soundfonts/
 mlartifacts/
 checkpoints/
 
