@@ -21,7 +21,9 @@ dependencies = [
     "pretty-midi (>=0.2.11,<0.3.0)",
     "miditok (>=3.0.6.post1,<4.0.0)",
     "tokenizers (>=0.22.2,<0.23.0)",
-    "nltk (>=3.9.4,<4.0.0)"
+    "nltk (>=3.9.4,<4.0.0)",
+    "pydantic-settings (>=2.14.0,<3.0.0)",
+    "loguru (>=0.7.3,<0.8.0)"
 ]
 
 [build-system]

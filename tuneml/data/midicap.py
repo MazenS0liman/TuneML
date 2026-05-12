@@ -1,25 +1,17 @@
+# ——————————————————————————————————————————————————————————————
+# Imports
 import os
 import json
+from typing import Dict, List
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict
 
 import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
+from tuneml.tokenizers import MidiTokenizer, Flan5Tokenizer
 
-from tuneml.vocab.midi import MidiVocab
-from tuneml.tokenizers.MidiTokenizer import MidiTokenizer
-from tuneml.tokenizers.TextTokenizer import Flan5Tokenizer
-
-
-class MaestroDataset(Dataset):
-    """
-    """
-    def process_data(
-        self
-    ):
-        pass
-
+# ——————————————————————————————————————————————————————————————
+# MidiCap Dataset
 class MidiCapDataset(Dataset):
     """
     Dataset for training a model to generate MIDI data from text captions. 
@@ -33,12 +25,12 @@ class MidiCapDataset(Dataset):
         max_text_len=256,
         max_midi_len=2048,
         batch_size: int = 32,
-        midi_workers: int = 4
+        num_workers: int = 4
     ):
         self.max_text_len = max_text_len
         self.max_midi_len = max_midi_len
         self.batch_size = batch_size
-        self.midi_workers = midi_workers
+        self.num_workers = num_workers
 
         if not os.path.exists(datapath):
             raise FileNotFoundError(f"Metadata file not found at {datapath}")
@@ -51,7 +43,7 @@ class MidiCapDataset(Dataset):
                 batch_size=batch_size,
                 max_text_len=max_text_len,
                 max_midi_len=max_midi_len,
-                midi_workers=midi_workers,
+                num_workers=num_workers,
             )
             # save processed data for future use
             torch.save(data, datapath.replace(".json", ".pt"))
@@ -87,7 +79,7 @@ class MidiCapDataset(Dataset):
         batch_size: int = 32,
         max_text_len: int = 256,
         max_midi_len: int = 2048,
-        midi_workers: int = 4,
+        num_workers: int = 4,
     ) -> Dict[str, torch.Tensor]:
         """
         Processes Text to MIDI dataset and saves it as PyTorch tensors.
@@ -109,7 +101,7 @@ class MidiCapDataset(Dataset):
             midi_paths = [os.path.join("datasets/midicaps", row["location"]) for row in batch_rows]
 
             def tokenize_midi_file(fname):
-                return midi_tokenizer(fname=fname, max_length=max_midi_len)
+                return midi_tokenizer(file_path=fname, max_length=max_midi_len)
 
             text_tokens = text_tokenizer(
                 captions,
@@ -119,7 +111,7 @@ class MidiCapDataset(Dataset):
                 max_length=max_text_len,
             ).input_ids
 
-            with ThreadPoolExecutor(max_workers=midi_workers) as executor:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 midi_tokens = list(
                     executor.map(
                         tokenize_midi_file,
@@ -174,9 +166,12 @@ class MidiCapDataset(Dataset):
                 f"No valid samples were parsed from {metadata_path}. "
                 "Check the metadata format and MIDI file paths."
             )
+            
+        midi_tensors: List[torch.Tensor] = [torch.as_tensor(tokens, dtype=torch.long).flatten() for tokens in midi_list]
+        text_tensors: List[torch.Tensor] = [torch.as_tensor(tokens, dtype=torch.long).flatten() for tokens in text_list]
 
-        midi_padded = pad_sequence(midi_list, batch_first=True, padding_value=MidiVocab.PAD_TOKEN)
-        text_padded = pad_sequence(text_list, batch_first=True, padding_value=MidiVocab.PAD_TOKEN)
+        midi_padded: torch.Tensor = pad_sequence(midi_tensors, batch_first=True, padding_value=0)
+        text_padded: torch.Tensor = pad_sequence(text_tensors, batch_first=True, padding_value=0)
 
         processed_data = {
             "midi_tokens": midi_padded,

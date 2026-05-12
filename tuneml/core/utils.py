@@ -1,4 +1,8 @@
 import torch
+import numpy as np
+import soundfile as sf
+import librosa
+from typing import Tuple
 
 def transformer_lr_schedule(
     d_model, 
@@ -50,3 +54,70 @@ def generate_causal_mask(
         torch.ones(seq_len, seq_len, device=device), 
         diagonal=1
     ).bool()
+
+
+def padding(array, xx, yy):
+    """
+    Pads the input array to the target shape (xx, yy) with zeros.
+    
+    :param array: The input array to be padded.
+    :type array: np.ndarray
+    :param xx: The target number of rows.
+    :type xx: int
+    :param yy: The target number of columns.
+    :type yy: int
+    
+    :return: The padded array with shape (xx, yy).
+    :rtype: np.ndarray
+    """
+    h = array.shape[0]
+    w = array.shape[1]
+    
+    # Trim if larger than target
+    if h > xx:
+        array = array[:xx, :]
+        h = xx
+    if w > yy:
+        array = array[:, :yy]
+        w = yy
+
+    # Pad if smaller than target
+    a = (xx - h) // 2
+    aa = (xx - h) - a
+    b = (yy - w) // 2
+    bb = (yy - w) - b
+    
+    return np.pad(array, ((a, aa), (b, bb)), mode='constant', constant_values=0)
+
+
+def load_audio(file_path: str, target_sr: int = 22050) -> Tuple[np.ndarray, int]:
+    """
+    Loads an audio file and resamples it to the target sample rate.
+    
+    :param file_path: The path to the audio file.
+    :type file_path: str
+    :param target_sr: The target sample rate for resampling (default is 22050).
+    :type target_sr: int
+    
+    :return: A tuple containing the audio waveform as a numpy array and the sample rate.
+    :rtype: Tuple[np.ndarray, int]
+    """
+    waveform, sr = sf.read(file_path)
+    
+    # Resample if the original sample rate is different from the target sample rate
+    if sr != target_sr:
+        waveform = librosa.resample(waveform.astype(float), orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+    
+    # Convert to PyTorch tensor        
+    waveform = torch.tensor(waveform, dtype=torch.float32)
+
+    # Handle mono and stereo audio
+    if waveform.ndim == 1:  # Mono audio
+        waveform = waveform.unsqueeze(0)  # Add channel dimension
+    elif waveform.ndim == 2 and waveform.shape[1] == 2:  # Stereo audio
+        waveform = waveform.T  # Transpose to (channels, samples)
+    else:
+        raise ValueError(f"Unsupported audio format with shape {waveform.shape}")
+    
+    return waveform, sr

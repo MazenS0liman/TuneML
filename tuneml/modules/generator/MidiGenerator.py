@@ -1,18 +1,17 @@
 # ——————————————————————————————————————————————————————————————
 # Imports
 import os
-import mido
+import threading
 from midi2audio import FluidSynth
 from typing import Union, List
 
 import torch
 import torch.nn.functional as F
 
-from tuneml.vocab.midi import MidiVocab
 from tuneml.core.utils import generate_causal_mask
-from tuneml.tokenizers.TextTokenizer import Flan5Tokenizer
-from tuneml.models.transformer.midi.MidiTransformer import MidiTransformer
-from tuneml.models.transformer.midi.MidiTransformerTrainer import MidiTransformerHparams
+from tuneml.tokenizers import Flan5Tokenizer, MidiTokenizer
+from tuneml.models.transformer.MidiTransformer import MidiTransformer
+from tuneml.trainers.MidiTransformerTrainer import MidiTransformerHparams
 
 # ——————————————————————————————————————————————————————————————
 # Midi Generator Class
@@ -32,21 +31,21 @@ class MidiGenerator:
         else:
             print(f"Using device: {device}")
         
-        self.device = device         
+        self.device = device
         ckpt = torch.load(model_ckpt_path, map_location=self.device)
         self.hparams = ckpt["hparams"]
-        midi_vocab_size = self.hparams.get("vocab_size", self.hparams.get("midi_vocab_size"))
-        if midi_vocab_size is None:
-            raise KeyError("Expected 'vocab_size' or 'midi_vocab_size' in checkpoint hparams")
+        self.midi_tokenizer = MidiTokenizer()
+        self.text_tokenizer = Flan5Tokenizer()
 
         self.model = MidiTransformer(
             d_model=self.hparams["d_model"],
             num_layers=self.hparams["num_layers"],
             num_heads=self.hparams["num_heads"],
             d_ff=self.hparams["d_ff"],
-            max_abs_position=self.hparams["max_abs_position"],
-            midi_vocab_size=midi_vocab_size,
-            text_vocab_size=self.hparams["text_vocab_size"],
+            max_midi_len=self.hparams["max_midi_len"],
+            max_text_len=self.hparams["max_text_len"],
+            midi_vocab_size=self.midi_tokenizer.vocab_size,
+            text_vocab_size=self.text_tokenizer.vocab_size,
             bias=self.hparams["bias"],
             dropout=self.hparams["dropout"],
             layernorm_eps=self.hparams["layernorm_eps"],
@@ -57,164 +56,52 @@ class MidiGenerator:
         if state_dict is not None:
             self.model.load_state_dict(state_dict)
 
-    def bin_to_velocity(
-        self,
-        bin_index: int,
-        step: int = MidiVocab.BIN_STEP
-    ) -> int:
-        """
-        Convert a bin index (0-31) back to a velocity value (0-127).
+        # Precompute token IDs that should never be sampled at generation time.
+        self._banned_token_ids = self._resolve_banned_token_ids()
 
-        :param bin_index: Index of the velocity bin to convert. Must be in the range [0, 128 // step - 1].
-        :type bin_index: int
-        :param step: Step size for binning velocity values. Must be a divisor of
-                        128. Default is MidiVocab.BIN_STEP (e.g., 4).
-        :type step: int
-        
-        :returns: Velocity value corresponding to the input bin index.
-        :rtype: int
-        """
-        if not (0 <= bin_index * step <= 127):
-            raise ValueError(f"Bin index must be in the range [0, {128 // step - 1}].")
-        
-        return int(bin_index * step + step / 2)
+    def _resolve_banned_token_ids(self):
+        banned_ids = set()
+        for token_name in ("PAD_None", "MASK_None", "PAD", "MASK"):
+            try:
+                banned_ids.add(self.midi_tokenizer.get_idx(token_name))
+            except ValueError:
+                continue
+        return sorted(banned_ids)
         
     def tokens_to_midi(
         self,
         tokens: Union[List[int], torch.Tensor],
-        fname: str,
-        tempo=500000,
-        save_path: str = None
-    ) -> mido.MidiFile:
+        store_path: str = None
+    ) -> None:
         """
         Translates a set of indices in the Oore et. al, 2018 vocabulary into a midi file
 
         :param tokens: list of indices in vocab to be translated into a midi file
         :type tokens: list or torch.Tensor
-        :param fname: name for single track of midi file returned
-        :type fname: str
-        :param tempo: tempo of midi file returned in µs / beat, tempo_in_µs_per_beat = 60 * 10e6 / tempo_in_bpm
-        :type tempo: int
-        :param save_path: optional path to save the generated midi file; if None, the midi file will not be saved
-        :type save_path: str or None
+        :param store_path: optional path to save the generated midi file; if None, the midi file will not be saved
+        :type store_path: str or None
         
-        :returns: a single-track piano midi file translated from the input vocab
-        :rtype: mido.MidiFile
+        :returns: None
+        :rtype: None
         """
-        if tokens is None:
-            raise ValueError("Input tokens cannot be None")
-
-        # check tokens is ints, assuming 1d list
-        if isinstance(tokens, list):
-            if not all(isinstance(i, int) for i in tokens):
-                raise ValueError("All tokens must be int type")
-        elif isinstance(tokens, torch.Tensor):
-            if not all(isinstance(i.item(), int) for i in tokens):
-                raise ValueError("All tokens must be int type")
-        else:
-            raise ValueError("Tokens must be a list or torch.Tensor")
-
-        # set up midi file
-        mid = mido.MidiFile()
-        meta_track = mido.MidiTrack()
-        track = mido.MidiTrack()
-
-        # meta messages; meta time is 0 everywhere to prevent delay in playing notes
-        meta_track.append(mido.MetaMessage("track_name").copy(name=fname, time=0))
-        meta_track.append(mido.MetaMessage("smpte_offset"))
-        # assume time_signature is 4/4
-        time_sig = mido.MetaMessage("time_signature")
-        time_sig = time_sig.copy(numerator=4, denominator=4, time=0)
-        meta_track.append(time_sig)
-        # assume key_signature is C
-        key_sig = mido.MetaMessage("key_signature", time=0)
-        meta_track.append(key_sig)
-        # assume tempo is constant at input tempo
-        set_tempo = mido.MetaMessage("set_tempo")
-        set_tempo = set_tempo.copy(tempo=tempo, time=0)
-        meta_track.append(set_tempo)
-        # end of meta track
-        end = mido.MetaMessage("end_of_track").copy(time=0)
-        meta_track.append(end)
-
-        # set up the piano; default channel is 0 everywhere; program=0 -> piano
-        program = mido.Message("program_change", channel=0, program=0, time=0)
-        track.append(program)
-        # dummy pedal off message; control should be < 64
-        cc = mido.Message("control_change", time=0)
-        track.append(cc)
-
-        # things needed for conversion
-        delta_time = 0
-        vel = 0
-
-        # reconstruct the performance
-        for idx in tokens:
-            # if torch tensor, get item
-            try:
-                idx = idx.item()
-            except AttributeError:
-                pass
-            # if pad token, continue
-            if idx <= 0:
-                continue
-            # adjust idx to ignore pad token
-            idx = idx - 1
-
-            # note messages
-            if 0 <= idx < MidiVocab.NOTE_ON_EVENTS + MidiVocab.NOTE_OFF_EVENTS:
-                # note on event
-                if 0 <= idx < MidiVocab.NOTE_ON_EVENTS:
-                    note = idx
-                    t = "note_on"
-                    v = vel  # get velocity from previous event
-                # note off event
-                else:
-                    note = idx - MidiVocab.NOTE_ON_EVENTS
-                    t = "note_off"
-                    v = 127
-
-                # create note message and append to track
-                msg = mido.Message(t)
-                msg = msg.copy(note=note, velocity=v, time=delta_time)
-                track.append(msg)
-
-                # reinitialize delta_time and velocity to handle subsequent notes
-                delta_time = 0
-                vel = 0
-
-            # time shift event
-            elif MidiVocab.NOTE_ON_EVENTS + MidiVocab.NOTE_OFF_EVENTS <= idx < MidiVocab.NOTE_ON_EVENTS + MidiVocab.NOTE_OFF_EVENTS + MidiVocab.TIME_SHIFT_EVENTS:
-                # find cut time in range (1, time_shift_events)
-                cut_time = idx - (MidiVocab.NOTE_ON_EVENTS + MidiVocab.NOTE_OFF_EVENTS - 1)
-                # scale cut_time by DIV (from vocabulary) to find time in ms; add to delta_time
-                delta_time += cut_time * MidiVocab.DIV
-
-            # velocity event
-            elif MidiVocab.NOTE_ON_EVENTS + MidiVocab.NOTE_OFF_EVENTS + MidiVocab.TIME_SHIFT_EVENTS <= idx < MidiVocab.NOTE_EVENTS + MidiVocab.TIME_SHIFT_EVENTS + MidiVocab.VELOCITY_EVENTS:
-                # get velocity for next note_on in range (0, 127)
-                vel = self.bin_to_velocity(idx - (MidiVocab.NOTE_ON_EVENTS + MidiVocab.NOTE_OFF_EVENTS + MidiVocab.TIME_SHIFT_EVENTS))
-
-        # end the track
-        end = mido.MetaMessage("end_of_track").copy(time=0)
-        track.append(end)
-
-        # append finalized track and return midi file
-        mid.tracks.append(meta_track)
-        mid.tracks.append(track)
+        # Initialize the MIDI tokenizer
+        midi_tokenizer = MidiTokenizer()
         
-        # save midi file if save_path is provided
-        if save_path is not None:
-            mid.save(os.path.join(save_path, fname + ".mid"))
+        # Create Midi file if not 
+        if store_path and not os.path.exists(store_path):
+            os.makedirs(os.path.dirname(store_path), exist_ok=True)
         
-        return mid
+        # Convert token indices to MIDI tokens and then to a MIDI file
+        midi_tokens = [midi_tokenizer.vocab[idx] for idx in tokens]
+        midi_tokenizer.tokens_to_midi(midi_tokens, store_path=store_path)
     
     def play(
         self,
         midi_path: str,
         soundfont_path: str = './soundfonts/The Ultimate SoundFont Pack/Ultimate Guitar Kit 2.SF2',
         output_wav_path: str = './output.wav',
-        loop: bool = False
+        loop: bool = False,
+        render_timeout_seconds: int = 30
     ):
         """
         Plays a MIDI file using FluidSynth and the specified SoundFont.
@@ -227,6 +114,8 @@ class MidiGenerator:
         :type output_wav_path: str
         :param loop: If True, the MIDI will loop indefinitely on Windows.
         :type loop: bool
+        :param render_timeout_seconds: Maximum time to wait for MIDI-to-WAV rendering. Use 0 or less to disable timeout.
+        :type render_timeout_seconds: int
         
         :returns: Path to the rendered WAV file.
         :rtype: str
@@ -237,8 +126,27 @@ class MidiGenerator:
             sample_rate=22050
         )
 
-        # Convert MIDI to WAV
-        fs.midi_to_audio(midi_path, output_wav_path)
+        # Convert MIDI to WAV with a timeout guard so notebook execution cannot hang indefinitely.
+        render_error = []
+
+        def _render_midi_to_audio() -> None:
+            try:
+                fs.midi_to_audio(midi_path, output_wav_path)
+            except Exception as exc:
+                render_error.append(exc)
+
+        render_thread = threading.Thread(target=_render_midi_to_audio, daemon=True)
+        render_thread.start()
+
+        if render_timeout_seconds > 0:
+            render_thread.join(timeout=render_timeout_seconds)
+            if render_thread.is_alive():
+                return None
+        else:
+            render_thread.join()
+
+        if render_error:
+            raise render_error[0]
 
         # On Windows, play once by default (loop=False). Use stop_midi() to force stop.
         try:
@@ -248,6 +156,7 @@ class MidiGenerator:
             if loop:
                 flags |= winsound.SND_LOOP
             winsound.PlaySound(output_wav_path, flags)
+
         except Exception:
             # If playback backend is unavailable, keep the rendered WAV for manual playback.
             pass
@@ -259,9 +168,16 @@ class MidiGenerator:
         midi_path: str,
         soundfont_path: str = './soundfonts/The Ultimate SoundFont Pack/Ultimate Guitar Kit 2.SF2',
         output_wav_path: str = './output.wav',
-        loop: bool = False
+        loop: bool = False,
+        render_timeout_seconds: int = 30
     ):
-        return self.play(midi_path, soundfont_path, output_wav_path, loop)
+        return self.play(
+            midi_path,
+            soundfont_path,
+            output_wav_path,
+            loop,
+            render_timeout_seconds,
+        )
 
     def stop_midi(self):
         try:
@@ -302,19 +218,22 @@ class MidiGenerator:
         with torch.no_grad():
             self.model.eval()
             # --- Tokenize and encode the input text ---
-            text_tokenizer = Flan5Tokenizer()
-            text_tokens = text_tokenizer(text, return_tensors="pt").input_ids.squeeze(0).tolist()  # (T_text,)
+            text_tokens = self.text_tokenizer(text, return_tensors="pt").input_ids.squeeze(0).tolist()  # (T_text,)
             text_tokens = text_tokens[:max_text_length]
             text_tokens = torch.tensor(text_tokens, dtype=torch.long, device=self.device).unsqueeze(0)  # (1, T_text)
-            text_padding_mask = text_tokens.eq(MidiVocab.PAD_TOKEN)
+            text_padding_mask = text_tokens.eq(0)
 
             # --- Autoregressive generation loop ---
-            generated = [MidiVocab.START_TOKEN]
+            generated = [self.midi_tokenizer.get_idx("BOS_None")]
             for _ in range(max(1, max_midi_length - 1)):
                 midi_in = torch.tensor(generated, dtype=torch.long, device=self.device).unsqueeze(0)  # (1, T_midi)
                 tgt_mask = generate_causal_mask(midi_in.shape[1], device=self.device)
                 predictions = self.model(text_tokens, midi_in, tgt_mask=tgt_mask, text_padding_mask=text_padding_mask)
                 next_token_logits = predictions[:, -1, :] / temperature
+
+                # Ban non-musical special tokens that degrade output quality.
+                if self._banned_token_ids:
+                    next_token_logits[:, self._banned_token_ids] = float('-inf')
 
                 # Apply top-k and top-p filtering
                 if top_k > 0:
@@ -330,15 +249,20 @@ class MidiGenerator:
                     indices_to_remove = sorted_indices[sorted_indices_to_remove]
                     next_token_logits[:, indices_to_remove] = float('-inf')
 
+                # Guard against pathological filtering where every token is masked out.
+                if torch.isneginf(next_token_logits).all():
+                    eos_id = self.midi_tokenizer.get_idx("EOS_None")
+                    next_token_logits[:, eos_id] = 0.0
+
                 next_token = torch.multinomial(F.softmax(next_token_logits, dim=-1), num_samples=1).item()
                 generated.append(next_token)
 
-                if next_token == MidiVocab.END_TOKEN:
+                if next_token == self.midi_tokenizer.get_idx("EOS_None"):
                     break
 
         # Remove special tokens from the returned sequence for downstream MIDI conversion.
         return [
             token
             for token in generated
-            if token not in (MidiVocab.START_TOKEN, MidiVocab.END_TOKEN)
+            if token not in (self.midi_tokenizer.get_idx("BOS_None"), self.midi_tokenizer.get_idx("EOS_None"))
         ]

@@ -1,6 +1,11 @@
+#!/usr/bin/python
+# ——————————————————————————————————————————————————————————————
+# Imports
 from tuneml.tokenizers.ITokenizer import ITokenizer
 from transformers import AutoTokenizer
 
+# ——————————————————————————————————————————————————————————————
+# Flan5Tokenizer implementation using Hugging Face's AutoTokenizer
 class Flan5Tokenizer(ITokenizer):
     def __init__(self, model_name: str = "google/flan-t5-base"):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)

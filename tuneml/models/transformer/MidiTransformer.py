@@ -7,6 +7,8 @@ from tuneml.tokenizers.TextTokenizer import Flan5Tokenizer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# ——————————————————————————————————————————————————————————————
+# Multi-Head Attention class
 class MultiHeadAttention(nn.Module):
     """
     Multi-Head Attention Block.
@@ -229,7 +231,8 @@ class MidiTransformer(nn.Module):
         num_layers,
         num_heads,
         d_ff,
-        max_abs_position,
+        max_midi_len,
+        max_text_len,
         midi_vocab_size,
         text_vocab_size,
         bias,
@@ -243,7 +246,8 @@ class MidiTransformer(nn.Module):
             num_layers (int): number of encoder and decoder layers
             num_heads (int): number of attention heads
             d_ff (int): intermediate dimension of FFN blocks
-            max_abs_position (int): maximum sequence length for positional encoding
+            max_midi_len (int): maximum length of MIDI token sequences
+            max_text_len (int): maximum length of text token sequences
             midi_vocab_size (int): number of tokens in the MIDI vocabulary
             text_vocab_size (int): number of tokens in the text vocabulary (from tokenizer)
             bias (bool): whether Linear layers learn a bias term
@@ -260,11 +264,11 @@ class MidiTransformer(nn.Module):
         
         # -- Text Embedding --
         self.text_embedding = nn.Embedding(self.text_vocab_size, d_model, padding_idx=pad_token_id)
-        self.text_pos_encoding = self.abs_positional_encoding(max_abs_position, d_model)
+        self.text_pos_encoding = self.abs_positional_encoding(max_text_len, d_model)
         
         # -- Midi Embedding --
         self.midi_embedding = nn.Embedding(self.midi_vocab_size, d_model)
-        self.midi_pos_encoding = self.abs_positional_encoding(max_abs_position, d_model)
+        self.midi_pos_encoding = self.abs_positional_encoding(max_midi_len, d_model)
 
         # -- Text Encoder --
         self.encoder = nn.TransformerEncoder(

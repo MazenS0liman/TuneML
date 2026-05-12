@@ -1,5 +1,9 @@
+# ——————————————————————————————————————————————————————————————
+# Imports
 import os
 import time
+import copy
+import mlflow
 from tqdm import tqdm
 
 import torch
@@ -9,9 +13,9 @@ from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
 from tuneml.core.utils import transformer_lr_schedule, generate_causal_mask
-from tuneml.data.midi import MidiCapDataset
-from tuneml.vocab.midi import MidiVocab
-from tuneml.models.transformer.midi.MidiTransformer import MidiTransformer
+from tuneml.data.midicap import MidiCapDataset
+from tuneml.tokenizers import Flan5Tokenizer, MidiTokenizer
+from tuneml.models.transformer.MidiTransformer import MidiTransformer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -58,19 +62,19 @@ def collate_fn(batch):
     midi_batch = [m[:MidiTransformerHparams.MAX_MIDI_LEN] for m in midi_batch]
 
     # pad sequences to max length in batch with pad token, and stack into tensors
-    text_tokens = pad_sequence(text_batch, batch_first=True, padding_value=MidiVocab.PAD_TOKEN)
-    midi_tokens = pad_sequence(midi_batch, batch_first=True, padding_value=MidiVocab.PAD_TOKEN)
+    text_tokens = pad_sequence(text_batch, batch_first=True, padding_value=0)
+    midi_tokens = pad_sequence(midi_batch, batch_first=True, padding_value=0)
 
     # if the midi sequence is only 1 token long, add a pad token to avoid issues with teacher forcing and loss calculation
     if midi_tokens.shape[1] < 2:
-        midi_tokens = F.pad(midi_tokens, (0, 1), value=MidiVocab.PAD_TOKEN)
+        midi_tokens = F.pad(midi_tokens, (0, 1), value=0)
 
     # --- Teacher forcing ---
     midi_in = midi_tokens[:, :-1]
     midi_tar = midi_tokens[:, 1:]
 
     # --- Padding mask ---
-    text_padding_mask = text_tokens.eq(MidiVocab.PAD_TOKEN)
+    text_padding_mask = text_tokens.eq(0)
 
     return text_tokens, text_padding_mask, midi_in, midi_tar
 
@@ -148,25 +152,23 @@ def val_step(
     loss = loss_fn(predictions.transpose(-1, -2), midi_tar)
     return float(loss)
 
-
+# ——————————————————————————————————————————————————————————————
+# MidiTransformerHparams class
 class MidiTransformerHparams:
     """
     Hyperparameters for the MidiTransformer model and training process. 
     This class is a simple wrapper around a dictionary to allow for easy saving and loading of hyperparameters.
     """
     # Default hyperparameters for the model and training process
-    D_MODEL = 512
-    NUM_LAYERS = 6
-    NUM_HEADS = 8
-    D_FF = 2048
-    MAX_ABS_POSITION = 2048
-    MIDI_VOCAB_SIZE = 512
-    TEXT_VOCAB_SIZE = 512
-    MAX_MIDI_LEN = 2048
-    MAX_TEXT_LEN = 256
-    BIAS = False
-    DROPOUT = 0.1
-    LAYERNORM_EPS = 1e-5
+    D_MODEL = 512               # model dimension
+    NUM_LAYERS = 6              # number of transformer layers
+    NUM_HEADS = 8               # number of attention heads
+    D_FF = 2048                 # dimension of feedforward network
+    MAX_MIDI_LEN = 2048         # maximum length of MIDI token sequences (after which they will be truncated)
+    MAX_TEXT_LEN = 256          # maximum length of text token sequences (after which they will be truncated)
+    BIAS = False                # whether to include bias terms in the linear layers of the model
+    DROPOUT = 0.1               # dropout rate for the transformer layers
+    LAYERNORM_EPS = 1e-5        # epsilon value for layer normalization to prevent division by zero
     
     def __init__(
         self,
@@ -174,9 +176,6 @@ class MidiTransformerHparams:
         num_layers=NUM_LAYERS,
         num_heads=NUM_HEADS,
         d_ff=D_FF,
-        max_abs_position=MAX_ABS_POSITION,
-        midi_vocab_size=MIDI_VOCAB_SIZE,
-        text_vocab_size=TEXT_VOCAB_SIZE,
         max_midi_len=MAX_MIDI_LEN,
         max_text_len=MAX_TEXT_LEN,
         bias=BIAS,
@@ -187,15 +186,14 @@ class MidiTransformerHparams:
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.d_ff = d_ff
-        self.max_abs_position = max_abs_position
-        self.midi_vocab_size = midi_vocab_size
-        self.text_vocab_size = text_vocab_size
         self.max_midi_len = max_midi_len
         self.max_text_len = max_text_len
         self.bias = bias
         self.dropout = dropout
         self.layernorm_eps = layernorm_eps
 
+# ——————————————————————————————————————————————————————————————
+# MidiTransformerTrainer class
 class MidiTransformerTrainer:
     """
     Trainer for the MidiTransformer model.
@@ -211,13 +209,19 @@ class MidiTransformerTrainer:
         warmup_steps=4000,
         ckpt_path="midi_transformer_ckpt.pt", 
         load_from_checkpoint=False, 
-        n_samples=None
+        n_samples=None,
+        mlflow_enabled=False,
+        mlflow_log_model=False,
     ):
+        # initialize tokenizers to get vocab sizes for model creation
+        self.midi_tokenizer = MidiTokenizer()
+        self.text_tokenizer = Flan5Tokenizer()
+        
         # get the data
         self.datapath = datapath
         self.batch_size = batch_size
         self.n_samples = n_samples
-        data = self._load_dataset(datapath, n_samples=n_samples)
+        data = self.load_dataset(datapath, n_samples=n_samples)
 
         if len(data) < 2:
             raise ValueError(f"Need at least 2 valid samples to train, found {len(data)}")
@@ -232,11 +236,6 @@ class MidiTransformerTrainer:
                 hparams = vars(hparams_obj)
             else:
                 raise ValueError("hparams must be a dict or None")
-            
-
-        # Keep positional encoding bounded to avoid pathological memory use
-        if hparams["max_abs_position"] > 0:
-            hparams["max_abs_position"] = min(hparams["max_abs_position"], MidiTransformerHparams.MAX_MIDI_LEN)
 
         # train / validation split: 80 / 20
         train_len = max(1, round(len(data) * 0.8))
@@ -250,8 +249,8 @@ class MidiTransformerTrainer:
         self.train_ds = MidiCapDataset(
             datapath,
             n_samples=self.n_samples,
-            max_text_len=MidiTransformerHparams.MAX_TEXT_LEN,
-            max_midi_len=hparams["max_abs_position"]
+            max_text_len=hparams["max_text_len"],
+            max_midi_len=hparams["max_midi_len"]
         )
 
         train_len = max(1, int(0.8 * len(self.train_ds)))
@@ -281,13 +280,14 @@ class MidiTransformerTrainer:
             num_layers=hparams["num_layers"],
             num_heads=hparams["num_heads"],
             d_ff=hparams["d_ff"],
-            max_abs_position=hparams["max_abs_position"],
-            midi_vocab_size=hparams["midi_vocab_size"],
-            text_vocab_size=hparams["text_vocab_size"],
+            max_text_len=hparams["max_text_len"],
+            max_midi_len=hparams["max_midi_len"],
+            midi_vocab_size=self.midi_tokenizer.vocab_size,
+            text_vocab_size=self.text_tokenizer.vocab_size,
             bias=hparams["bias"],
             dropout=hparams["dropout"],
             layernorm_eps=hparams["layernorm_eps"],
-            pad_token_id=MidiVocab.PAD_TOKEN
+            pad_token_id=0
         ).to(device) 
         self.hparams = hparams
 
@@ -303,13 +303,18 @@ class MidiTransformerTrainer:
         self.ckpt_path = ckpt_path
         self.train_losses = []
         self.val_losses = []
+        self.best_val_loss = float("inf")
+        self.best_state_dict = None
+        self.best_ckpt_path = os.path.splitext(self.ckpt_path)[0] + "_best.pt"
+        self.mlflow_enabled = bool(mlflow_enabled)
+        self.mlflow_log_model = bool(mlflow_log_model)
 
         # load checkpoint if necessesary
         if load_from_checkpoint and os.path.isfile(self.ckpt_path):
             self.load()
 
     @staticmethod
-    def _load_dataset(datapath, n_samples=None):
+    def load_dataset(datapath, n_samples=None):
         """
         Loads dataset ONLY from .pt file (tensor format).
         
@@ -431,8 +436,19 @@ class MidiTransformerTrainer:
         print(time.strftime("%Y-%m-%d %H:%M"))
         torch.set_float32_matmul_precision("high") # this speeds up traning
 
+        if self.mlflow_enabled:
+            mlflow.log_params({
+                "batch_size": self.batch_size,
+                "warmup_steps": self.warmup_steps,
+                "epochs": epochs,
+                "n_samples": self.n_samples,
+                **self.hparams,
+            })
+
         try:
-            for epoch in tqdm(range(epochs), desc=f"Training Epochs {epochs + 1}: ", unit="epoch"):
+            epoch_iterator = tqdm(range(epochs), desc=f"Training Epoch: 0/{epochs}")
+            for epoch in epoch_iterator:
+                epoch_iterator.set_description(f"Training Epoch: {epoch + 1}/{epochs}")
                 train_epoch_losses = []
                 val_epoch_losses = []
 
@@ -470,8 +486,35 @@ class MidiTransformerTrainer:
                     f"Train Loss: {train_losses[-1]} - Val Loss: {val_losses[-1]}")
                 start = time.time()
 
+                if self.mlflow_enabled:
+                    mlflow.log_metrics(
+                        {
+                            "train_loss": train_mean,
+                            "val_loss": val_mean,
+                            "lr": self.optimizer.param_groups[0]["lr"],
+                        },
+                        step=epoch + 1,
+                    )
+
+                is_best = val_mean < self.best_val_loss
+                if is_best:
+                    self.best_val_loss = val_mean
+                    self.best_state_dict = copy.deepcopy(self.model.state_dict())
+
+                    if self.mlflow_enabled:
+                        mlflow.log_metric("best_val_loss", self.best_val_loss, step=epoch + 1)
+                        if self.mlflow_log_model:
+                            try:
+                                mlflow.pytorch.log_model(self.model, name="best_midi_transformer")
+                            except Exception as e:
+                                print(f"Warning: MLflow model logging failed: {e}. Continuing training.")
+
         except KeyboardInterrupt:
             pass
+
+        # Ensure the in-memory model is the best validation checkpoint before final save/export.
+        if self.best_state_dict is not None:
+            self.model.load_state_dict(self.best_state_dict)
 
         print("Checkpointing...")
         self.save()
