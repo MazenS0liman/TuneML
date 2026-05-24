@@ -127,27 +127,3 @@ How it works:
 Returns:
 
 - `(batch_size, generated_seq_len)`
-
-### Samples
-
-**Sample 1:**
-
-*Prompt:* A slow relaxing and happy melody with a steady rhythm, perfect for a sunny day at the beach.
-
-<audio controls>
-	<source src="../../../samples/midi_transformer_generated_melod_1.mp3" type="audio/mp3">
-	Your browser does not support the audio element.
-</audio>
-
-**Sample 2:**
-
-*Prompt:* A brighter melodic variation with a stronger rhythmic pulse.
-
-<audio controls>
-	<source src="../../../samples/midi_transformer_generated_melody_2.mp3" type="audio/mp3">
-	Your browser does not support the audio element.
-</audio>
-
-> [!NOTE]
-> The audio of the model could be enhanced using large number of layers and training of huge datasets.
-> In this example, we trained the model on 10000 instances from Midicaps dataset for around 40 epochs.

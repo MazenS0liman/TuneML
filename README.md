@@ -42,7 +42,7 @@ When the server is running, open:
 
 ## Documentation
 
-- [Transformer model notes](tuneml/models/transformer/docs.md) for the MidiTransformer and Transformer module documentation.
+- [Transformer model notes](tuneml/models/transformer/ReadME.md) for the MidiTransformer and Transformer module documentation.
 
 ## :warning: Note
 - This project is under active development, so features and APIs may change.
