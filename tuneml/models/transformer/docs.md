@@ -135,7 +135,7 @@ Returns:
 *Prompt:* A slow relaxing and happy melody with a steady rhythm, perfect for a sunny day at the beach.
 
 <audio controls>
-	<source src="../../../samples/midi_transformer_generated_melod_1.wav" type="audio/wav">
+	<source src="../../../samples/midi_transformer_generated_melod_1.mp3" type="audio/mp3">
 	Your browser does not support the audio element.
 </audio>
 
@@ -144,7 +144,7 @@ Returns:
 *Prompt:* A brighter melodic variation with a stronger rhythmic pulse.
 
 <audio controls>
-	<source src="../../../samples/midi_transformer_generated_melody_2.wav" type="audio/wav">
+	<source src="../../../samples/midi_transformer_generated_melody_2.mp3" type="audio/mp3">
 	Your browser does not support the audio element.
 </audio>
 
