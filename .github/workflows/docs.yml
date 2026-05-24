@@ -1,0 +1,71 @@
+  name: Build & Deploy Docs to GitHub Pages
+
+  on:
+    push:
+      branches: ["main"]
+      paths:
+        - "**/*.py"
+        - "docs/**"
+        - "generate_docs.ps1"
+    workflow_dispatch:
+
+  permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+  concurrency:
+    group: "pages"
+    cancel-in-progress: false
+
+  jobs:
+    build-and-deploy:
+      runs-on: windows-latest
+
+      environment:
+        name: github-pages
+        url: ${{ steps.deploy.outputs.page_url }}
+
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+
+        - name: Setup Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: "3.11"
+            cache: "pip"
+            cache-dependency-path: |
+              requirements.txt
+              
+        - name: Install dependencies
+          run: |
+            pip install sphinx python-dotenv sphinx-rtd-theme sphinx-autodoc-typehints sphinx-copybutton sphinx-multiversion myst-parser breathe
+            if (Test-Path requirements.txt) { pip install -r requirements.txt }
+          shell: pwsh
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        - name: Install package
+          run: |
+            pip install -e .
+
+        - name: Build documentation
+          run: ./generate_docs.ps1
+          shell: pwsh
+
+        - name: Create .nojekyll file
+          run: New-Item -Path "docs/build/html/.nojekyll" -ItemType File -Force
+          shell: pwsh
+
+        - name: Setup Pages
+          uses: actions/configure-pages@v5
+
+        - name: Upload docs artifact
+          uses: actions/upload-pages-artifact@v3
+          with:
+            path: docs/build/html
+
+        - name: Deploy to GitHub Pages
+          id: deploy
+          uses: actions/deploy-pages@v4

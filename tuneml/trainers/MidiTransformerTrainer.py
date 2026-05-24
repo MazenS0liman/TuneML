@@ -70,11 +70,11 @@ def collate_fn(batch):
         midi_tokens = F.pad(midi_tokens, (0, 1), value=0)
 
     # --- Teacher forcing ---
-    midi_in = midi_tokens[:, :-1]
-    midi_tar = midi_tokens[:, 1:]
+    midi_in: torch.Tensor = midi_tokens[:, :-1] # decoder input is the MIDI tokens shifted right (removing the last token)
+    midi_tar: torch.Tensor = midi_tokens[:, 1:] # decoder target is the MIDI tokens shifted left (removing the first token)
 
     # --- Padding mask ---
-    text_padding_mask = text_tokens.eq(0)
+    text_padding_mask: torch.Tensor = text_tokens.eq(0)
 
     return text_tokens, text_padding_mask, midi_in, midi_tar
 

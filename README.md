@@ -1,4 +1,4 @@
-# <img src="static/images/music.png" alt="Tune ML" width="100" align="center" style="margin-right: 10px;"/> Tune ML
+# <img src="static/images/tune-ml.png" alt="Tune ML" width="100" align="center" style="margin-right: 10px;"/> Tune ML
 
 Tune ML is a Python project for audio processing, classification, and generation with deep learning. The repository combines a FastAPI application shell, model implementations, training utilities and notebooks.
 
@@ -40,6 +40,9 @@ When the server is running, open:
 - `http://localhost:8001/` for the root status response
 - `http://localhost:8001/docs` for the Swagger UI in non-production environments
 
-## :warning: Note
-- This project is still under construction.
+## Documentation
 
+- [Transformer model notes](tuneml/models/transformer/docs.md) for the MidiTransformer and Transformer module documentation.
+
+## :warning: Note
+- This project is under active development, so features and APIs may change.
