@@ -55,7 +55,7 @@
           shell: pwsh
 
         - name: Create .nojekyll file
-          run: New-Item -Path "docs/build/html/.nojekyll" -ItemType File -Force
+          run: New-Item -Path "docs/_build/html/.nojekyll" -ItemType File -Force
           shell: pwsh
 
         - name: Setup Pages
@@ -64,7 +64,7 @@
         - name: Upload docs artifact
           uses: actions/upload-pages-artifact@v3
           with:
-            path: docs/build/html
+            path: docs/_build/html
 
         - name: Deploy to GitHub Pages
           id: deploy
