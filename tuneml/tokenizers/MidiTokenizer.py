@@ -115,8 +115,20 @@ class MidiTokenizer(ITokenizer):
         # Tokenize the MIDI file
         tokens = self.tokenizer(file_path)
 
-        # Convert tokens to indices using the provided vocabulary
-        return tokens.ids[:max_length]
+        # Train and generate with the same explicit sequence boundaries. Miditok's
+        # Structured tokenizer exposes the special tokens but does not add BOS/EOS
+        # to file encodings automatically.
+        token_ids = list(tokens.ids)
+        bos_id = self.get_idx("BOS_None")
+        eos_id = self.get_idx("EOS_None")
+        token_ids = [bos_id] + token_ids + [eos_id]
+
+        # Keep EOS when truncating so the model can learn to terminate sequences.
+        if len(token_ids) > max_length:
+            token_ids = token_ids[:max_length]
+            token_ids[-1] = eos_id
+
+        return token_ids
     
     def tokens_to_midi(
         self,

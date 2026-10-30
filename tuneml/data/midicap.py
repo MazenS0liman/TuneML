@@ -48,7 +48,14 @@ class MidiCapDataset(Dataset):
             # save processed data for future use
             torch.save(data, datapath.replace(".json", ".pt"))
                 
-        self.midi = data["midi_tokens"]
+        required_keys = {"midi_tokens", "text_tokens"}
+        if not required_keys.issubset(data):
+            raise ValueError(
+                "Dataset must contain midi_tokens and text_tokens. "
+                "Regenerate the cache from datasets/midicaps/train.json."
+            )
+
+        self.midi = self._ensure_midi_boundaries(data["midi_tokens"])
         self.text = data["text_tokens"]
         
         if n_samples is not None:
@@ -71,6 +78,26 @@ class MidiCapDataset(Dataset):
         midi_len = max(2, min(midi_non_pad if midi_non_pad > 0 else 2, self.max_midi_len))
 
         return text[:text_len], midi[:midi_len]
+
+    def _ensure_midi_boundaries(self, midi_tokens: torch.Tensor) -> torch.Tensor:
+        """Migrate cached token tensors to the BOS/EOS training contract."""
+        midi_tokenizer = MidiTokenizer()
+        bos_id = midi_tokenizer.get_idx("BOS_None")
+        eos_id = midi_tokenizer.get_idx("EOS_None")
+        sequences = []
+
+        for tokens in midi_tokens:
+            tokens = tokens[tokens.ne(0)].tolist()
+            if not tokens or tokens[0] != bos_id:
+                tokens.insert(0, bos_id)
+            if tokens[-1] != eos_id:
+                tokens.append(eos_id)
+            tokens = tokens[:self.max_midi_len]
+            if tokens[-1] != eos_id:
+                tokens[-1] = eos_id
+            sequences.append(torch.tensor(tokens, dtype=torch.long))
+
+        return pad_sequence(sequences, batch_first=True, padding_value=0)
         
     def _process_data(
         self,

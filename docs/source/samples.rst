@@ -27,8 +27,14 @@ Prompt: A brighter melodic variation with a stronger rhythmic pulse.
      Your browser does not support the audio element.
    </audio>
 
-Notes
------
+Sample 3
+--------
 
-- If audio does not play, ensure you are viewing built HTML docs (not a plain text preview).
-- Use a modern browser (Edge, Chrome, Firefox, Safari) with audio enabled.
+Prompt: A long and emotional soundtrack piece that evokes a sense of relaxation and inspiration.
+
+.. raw:: html
+
+   <audio controls preload="metadata">
+     <source src="_static/audio/midi_transformer_generated_melody_3.mp3" type="audio/mpeg">
+     Your browser does not support the audio element.
+   </audio>

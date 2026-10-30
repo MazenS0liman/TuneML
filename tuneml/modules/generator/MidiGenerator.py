@@ -31,7 +31,7 @@ class MidiGenerator:
             device = "cpu"
         else:
             print(f"Using device: {device}")
-        
+
         self.device = device
         self.model_ckpt_path = model_ckpt_path
         ckpt = torch.load(model_ckpt_path, map_location=self.device)
@@ -41,6 +41,7 @@ class MidiGenerator:
 
         # Precompute token IDs that should never be sampled at generation time.
         self._banned_token_ids = self._resolve_banned_token_ids()
+        self._token_type_ids = self._resolve_token_type_ids()
 
     def _build_transformer_from_ckpt(self, ckpt):
         hparams = ckpt["hparams"]
@@ -97,8 +98,23 @@ class MidiGenerator:
         self, 
         next_token_logits, 
         top_k=0, 
-        top_p=0.0
+        top_p=0.0,
+        previous_token_id=None
     ) -> int:
+        # Restrict candidates to the next valid REMI event type. This prevents
+        # malformed event sequences such as Pitch -> Pitch or Velocity -> Pitch.
+        if previous_token_id is not None:
+            previous_type = self.midi_tokenizer.tokenizer.token_id_type(previous_token_id)
+            allowed_types = self.midi_tokenizer.tokenizer.tokens_types_graph.get(previous_type, set())
+            allowed_ids = {
+                token_id
+                for token_id, token_type in self._token_type_ids.items()
+                if token_type in allowed_types
+            }
+            disallowed_ids = set(self._token_type_ids) - allowed_ids
+            if disallowed_ids:
+                next_token_logits[:, sorted(disallowed_ids)] = float('-inf')
+
         # Ban non-musical special tokens that degrade output quality.
         if self._banned_token_ids:
             next_token_logits[:, self._banned_token_ids] = float('-inf')
@@ -135,6 +151,12 @@ class MidiGenerator:
             except ValueError:
                 continue
         return sorted(banned_ids)
+
+    def _resolve_token_type_ids(self):
+        return {
+            token_id: self.midi_tokenizer.tokenizer.token_id_type(token_id)
+            for token_id in range(self.midi_tokenizer.vocab_size)
+        }
         
     def tokens_to_midi(
         self,
@@ -261,9 +283,9 @@ class MidiGenerator:
         midi_file_path: Optional[str] = None,
         max_midi_length=MidiTransformerHparams.MAX_MIDI_LEN,
         max_text_length=MidiTransformerHparams.MAX_TEXT_LEN,
-        temperature=1.0,
-        top_k=0,
-        top_p=0.0
+        temperature=0.8,
+        top_k=40,
+        top_p=0.9
     ) -> List[int]:
         """
         Generates a MIDI sequence from a text prompt or continues from a MIDI file prompt.
@@ -292,8 +314,10 @@ class MidiGenerator:
         if midi_file_path is not None and not os.path.isfile(midi_file_path):
             raise FileNotFoundError(f"MIDI prompt file not found: {midi_file_path}")
 
-        # A MIDI prompt implies decoder-only continuation behavior.
-        use_gpt = midi_file_path is not None or self._is_empty_text(text)
+        # A MIDI prompt implies decoder-only continuation behavior. An empty
+        # text prompt still uses the text-conditioned model when its checkpoint
+        # contains transformer weights; it is not a reason to switch models.
+        use_gpt = midi_file_path is not None
 
         with torch.no_grad():
             ckpt = torch.load(self.model_ckpt_path, map_location=self.device)
@@ -330,6 +354,7 @@ class MidiGenerator:
             text_padding_mask = None
             if not use_gpt:
                 # --- Tokenize and encode the input text ---
+                text = "" if self._is_empty_text(text) else text
                 text_tokens = self.text_tokenizer(text, return_tensors="pt").input_ids.squeeze(0).tolist()
                 text_tokens = text_tokens[:max_text_length]
                 text_tokens = torch.tensor(text_tokens, dtype=torch.long, device=self.device).unsqueeze(0)
@@ -357,7 +382,12 @@ class MidiGenerator:
 
                 next_token_logits = predictions[:, -1, :] / temperature
 
-                next_token = self._sample_next_token(next_token_logits, top_k=top_k, top_p=top_p)
+                next_token = self._sample_next_token(
+                    next_token_logits,
+                    top_k=top_k,
+                    top_p=top_p,
+                    previous_token_id=generated[-1],
+                )
                 generated.append(next_token)
 
                 if next_token == eos_id:
