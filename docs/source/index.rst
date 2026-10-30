@@ -1,14 +1,14 @@
 TuneML Documentation
 ====================
 
-Welcome to the TuneML project documentation.
+TuneML is a deep-learning toolkit for audio processing, audio classification,
+and music generation, built on PyTorch.
 
 This site provides:
 
-- A high-level project overview
-- Model architecture and training references
-- Embedded generated audio samples
-
+- A project overview with installation instructions and a quick start
+- Model architecture, inference, and training references
+- Generated audio samples from the MIDI Transformer
 
 .. toctree::
    :maxdepth: 2
@@ -16,5 +16,5 @@ This site provides:
 
    overview
    models
+   api
    samples
-

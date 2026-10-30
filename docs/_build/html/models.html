@@ -1,0 +1,331 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Models &mdash; TuneML  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="_static/css/custom.css?v=adc7883a" />
+
+  
+    <link rel="shortcut icon" href="_static/tune-ml.png"/>
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=a46eff05"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Samples" href="samples.html" />
+    <link rel="prev" title="Project Overview" href="overview.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            TuneML
+              <img src="_static/tune-ml.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Project Overview</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Models</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#classification-models">Classification Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#minivgg-audio-classifier">MiniVGG Audio Classifier</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#generation-models">Generation Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#transformer-building-blocks">Transformer Building Blocks</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#midi-transformer">MIDI Transformer</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#training-components">Training Components</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="samples.html">Samples</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">TuneML</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Models</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/models.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="models">
+<h1>Models<a class="headerlink" href="#models" title="Link to this heading"></a></h1>
+<p>This section describes the primary model families in TuneML.</p>
+<section id="classification-models">
+<h2>Classification Models<a class="headerlink" href="#classification-models" title="Link to this heading"></a></h2>
+<section id="minivgg-audio-classifier">
+<h3>MiniVGG Audio Classifier<a class="headerlink" href="#minivgg-audio-classifier" title="Link to this heading"></a></h3>
+<p>MiniVGG (<code class="docutils literal notranslate"><span class="pre">tuneml/models/vgg/MiniVGG.py</span></code>) is a compact VGG-style convolutional
+neural network for audio classification. It expects a single-channel,
+128 × 128 spectrogram.</p>
+<p>The <code class="xref py py-class docutils literal notranslate"><span class="pre">AudioClassifier</span></code> inference module
+prepares audio as follows:</p>
+<ol class="arabic simple">
+<li><p>Load or receive a waveform and resample it to 22,050 Hz.</p></li>
+<li><p>Convert multi-channel audio to mono.</p></li>
+<li><p>Compute a 128-bin mel spectrogram (FFT size 2,048, hop length 512).</p></li>
+<li><p>Convert the spectrogram to decibels and pad it to 128 × 128.</p></li>
+<li><p>Pass it through three convolutional blocks, each with two convolutions,
+batch normalization, ReLU activation, and max pooling.</p></li>
+<li><p>Classify the final features into the labels stored in the checkpoint.</p></li>
+</ol>
+<p>The classifier returns either the most likely <code class="docutils literal notranslate"><span class="pre">(class_name,</span> <span class="pre">probability)</span></code>
+pair or the top <code class="docutils literal notranslate"><span class="pre">k</span></code> predictions.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>A checkpoint should contain <code class="docutils literal notranslate"><span class="pre">model_state_dict</span></code> (or <code class="docutils literal notranslate"><span class="pre">state_dict</span></code>) and,
+preferably, a <code class="docutils literal notranslate"><span class="pre">class_to_idx</span></code> mapping.</p>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tuneml.modules.classifier</span><span class="w"> </span><span class="kn">import</span> <span class="n">AudioClassifier</span>
+
+<span class="n">classifier</span> <span class="o">=</span> <span class="n">AudioClassifier</span><span class="p">(</span><span class="s2">&quot;weights/best_mini_vgg.pth&quot;</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="n">prediction</span> <span class="o">=</span> <span class="n">classifier</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="s2">&quot;path/to/audio.wav&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">prediction</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="generation-models">
+<h2>Generation Models<a class="headerlink" href="#generation-models" title="Link to this heading"></a></h2>
+<p>The transformer stack includes custom multi-head attention and feed-forward
+blocks, a text-conditioned MIDI generator, and a GPT-style MIDI model.</p>
+<ul class="simple">
+<li><p>Shared blocks: <code class="docutils literal notranslate"><span class="pre">tuneml/models/transformer/Transformer.py</span></code></p></li>
+<li><p>Text-conditioned generator: <code class="docutils literal notranslate"><span class="pre">tuneml/models/transformer/MidiTransformer.py</span></code></p></li>
+<li><p>GPT-style MIDI model: <code class="docutils literal notranslate"><span class="pre">tuneml/models/transformer/MidiGPT.py</span></code></p></li>
+</ul>
+<section id="transformer-building-blocks">
+<h3>Transformer Building Blocks<a class="headerlink" href="#transformer-building-blocks" title="Link to this heading"></a></h3>
+<dl>
+<dt><code class="docutils literal notranslate"><span class="pre">MultiHeadAttention</span></code></dt><dd><p>Projects queries, keys, and values into multiple heads, applies scaled
+dot-product attention in each head, and concatenates the result back to
+<code class="docutils literal notranslate"><span class="pre">d_model</span></code>. It is used for both masked self-attention and cross-attention.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15.0%" />
+<col style="width: 45.0%" />
+<col style="width: 40.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Input</p></th>
+<th class="head"><p>Shape</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">q</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">seq_len_q,</span> <span class="pre">d_model)</span></code></p></td>
+<td><p>Queries</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">k</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">seq_len_k,</span> <span class="pre">d_model)</span></code></p></td>
+<td><p>Keys</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">v</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">seq_len_v,</span> <span class="pre">d_model)</span></code></p></td>
+<td><p>Values</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">mask</span></code></p></td>
+<td><p>optional</p></td>
+<td><p>Boolean mask; <code class="docutils literal notranslate"><span class="pre">True</span></code> entries are masked out</p></td>
+</tr>
+</tbody>
+</table>
+<p>Output shape: <code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">seq_len_q,</span> <span class="pre">d_model)</span></code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">d_model</span></code> must be divisible by <code class="docutils literal notranslate"><span class="pre">num_heads</span></code>.</p>
+</div>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">PointwiseFFN</span></code></dt><dd><p>Applies a position-wise two-layer MLP to each token independently. It
+expands features to <code class="docutils literal notranslate"><span class="pre">d_ff</span></code>, applies ReLU, and projects back to
+<code class="docutils literal notranslate"><span class="pre">d_model</span></code>. Input and output shape: <code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">seq_len,</span> <span class="pre">d_model)</span></code>.</p>
+</dd>
+</dl>
+</section>
+<section id="midi-transformer">
+<h3>MIDI Transformer<a class="headerlink" href="#midi-transformer" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">MidiTransformer</span></code> is a text-conditioned encoder-decoder model for MIDI token
+generation. It learns a distribution over the next MIDI token at each decoder
+position while conditioning on encoded text.</p>
+<a class="reference internal image-reference" href="_images/midi-transformer.png"><img alt="MidiTransformer architecture" class="align-center" src="_images/midi-transformer.png" style="width: 500px;" />
+</a>
+<p>The model works in four stages:</p>
+<ol class="arabic simple">
+<li><p>Text tokens are embedded and encoded into a contextual memory tensor.</p></li>
+<li><p>MIDI tokens are embedded and passed through masked self-attention.</p></li>
+<li><p>The decoder cross-attends to the encoded text memory.</p></li>
+<li><p>A final linear layer projects decoder states to MIDI vocabulary logits.</p></li>
+</ol>
+<table class="docutils align-default" id="id1">
+<caption><span class="caption-text">Main components</span><a class="headerlink" href="#id1" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 70.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Component</p></th>
+<th class="head"><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Text embedding</p></td>
+<td><p>Converts text token IDs to <code class="docutils literal notranslate"><span class="pre">d_model</span></code> vectors</p></td>
+</tr>
+<tr class="row-odd"><td><p>Text positional encoding</p></td>
+<td><p>Injects absolute order information into the text sequence</p></td>
+</tr>
+<tr class="row-even"><td><p>Text encoder</p></td>
+<td><p>Produces a contextual memory tensor from the text sequence</p></td>
+</tr>
+<tr class="row-odd"><td><p>MIDI embedding</p></td>
+<td><p>Converts MIDI token IDs to <code class="docutils literal notranslate"><span class="pre">d_model</span></code> vectors</p></td>
+</tr>
+<tr class="row-even"><td><p>MIDI positional encoding</p></td>
+<td><p>Injects order information into the MIDI sequence</p></td>
+</tr>
+<tr class="row-odd"><td><p>Transformer decoder</p></td>
+<td><p>Applies masked self-attention over MIDI tokens and cross-attention over
+the text memory</p></td>
+</tr>
+<tr class="row-even"><td><p>Final projection</p></td>
+<td><p>Maps each decoder state to MIDI vocabulary logits</p></td>
+</tr>
+</tbody>
+</table>
+<table class="docutils align-default" id="id2">
+<caption><span class="caption-text">Methods</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 35.0%" />
+<col style="width: 40.0%" />
+<col style="width: 25.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Method</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Returns</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tokenize_text(text,</span> <span class="pre">device=&quot;cpu&quot;)</span></code></p></td>
+<td><p>Tokenizes raw text with the Flan-T5 tokenizer</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">text_tokens</span></code> and <code class="docutils literal notranslate"><span class="pre">text_padding_mask</span></code>, each
+<code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">text_seq_len)</span></code>; the mask is <code class="docutils literal notranslate"><span class="pre">True</span></code> at padded
+positions</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">generate_causal_mask(seq_len,</span> <span class="pre">device=None)</span></code></p></td>
+<td><p>Builds an upper-triangular mask for autoregressive decoding</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(seq_len,</span> <span class="pre">seq_len)</span></code> boolean mask, <code class="docutils literal notranslate"><span class="pre">True</span></code> above the diagonal</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">encode_text(text_tokens,</span> <span class="pre">text_padding_mask=None)</span></code></p></td>
+<td><p>Embeds text, adds positional encoding, applies dropout, and runs the
+encoder</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code> <code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">text_seq_len,</span> <span class="pre">d_model)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">forward(text_tokens,</span> <span class="pre">midi_tokens,</span> <span class="pre">tgt_mask=None,</span> <span class="pre">text_padding_mask=None)</span></code></p></td>
+<td><p>Full conditional forward pass: encode text, embed MIDI, decode, and
+project to logits</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">midi_seq_len,</span> <span class="pre">midi_vocab_size)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">generate(text_tokens,</span> <span class="pre">start_token_id,</span> <span class="pre">max_len=512,</span> <span class="pre">temperature=1.0,</span> <span class="pre">top_k=None,</span> <span class="pre">text_padding_mask=None,</span> <span class="pre">device=&quot;cpu&quot;)</span></code></p></td>
+<td><p>Autoregressively samples MIDI tokens</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(batch_size,</span> <span class="pre">generated_seq_len)</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p><code class="docutils literal notranslate"><span class="pre">generate</span></code> works as follows:</p>
+<ol class="arabic simple">
+<li><p>Encode the text once.</p></li>
+<li><p>Seed generation with the start token.</p></li>
+<li><p>At each step, decode the current prefix.</p></li>
+<li><p>Sample the next token from the last position’s logits.</p></li>
+<li><p>Append the token and repeat until <code class="docutils literal notranslate"><span class="pre">max_len</span></code>.</p></li>
+</ol>
+<p>Listen to generated examples on the <a class="reference internal" href="samples.html"><span class="doc">Samples</span></a> page.</p>
+</section>
+</section>
+<section id="training-components">
+<h2>Training Components<a class="headerlink" href="#training-components" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>MIDI transformer trainer: <code class="docutils literal notranslate"><span class="pre">tuneml/trainers/MidiTransformerTrainer.py</span></code></p></li>
+<li><p>MIDI GPT trainer: <code class="docutils literal notranslate"><span class="pre">tuneml/trainers/MidiGPTTrainer.py</span></code></p></li>
+<li><p>Audio classifier trainer: <code class="docutils literal notranslate"><span class="pre">tuneml/trainers/MiniVGGTrainer.py</span></code></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="overview.html" class="btn btn-neutral float-left" title="Project Overview" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="samples.html" class="btn btn-neutral float-right" title="Samples" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Mazen Soliman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
